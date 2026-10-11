@@ -1,15 +1,16 @@
 name: Deploy (optional, self-hosted GitOps)
 
-# Optional release pipeline for the maintainer's own cluster. It is skipped unless the repository
-# variable REGISTRY is set, so forks and clones do nothing here. Everything environment-specific comes
-# from repository variables and secrets, not from this file:
+# Tag-driven release. Pushing vX.Y.Z builds the image, commits the new tag into the config repo, and
+# Argo CD (automated sync) rolls it out; a GitHub Release with generated notes is created at the end.
+# The build/deploy jobs are optional for the maintainer's own cluster: they are skipped unless the
+# repository variable REGISTRY is set, so forks and clones just get the Release. Everything
+# environment-specific comes from repository variables and secrets, not from this file:
 #
 #   vars:    REGISTRY (e.g. registry.example:5000), K8S_CONFIG_REPO (owner/name), MANIFEST (path inside
 #            that repo), SITE_URL, REPO_URL (optional)
 #   secrets: REGISTRY_USER, REGISTRY_PASSWORD, K8S_CONFIG_DEPLOY_KEY (a write deploy key for K8S_CONFIG_REPO)
 #
-# It builds the image and commits the new tag into the config repo. It never talks to the cluster: a GitOps
-# controller (Argo CD) owns what is running. Pushing a tag stages a release; syncing ships it.
+# It never talks to the cluster: a GitOps controller (Argo CD) owns what is running.
 
 on:
   push:
@@ -103,8 +104,31 @@ jobs:
       - name: Summary
         run: |
           {
-            echo "### Staged"
+            echo "### Committed"
             echo ""
             echo "Image tag \`${{ github.sha }}\` committed to \`${{ vars.K8S_CONFIG_REPO }}\`."
-            echo "The GitOps controller is on manual sync, so this is **not live yet**: sync the application."
+            echo "The GitOps controller auto-syncs it; it should be live within a few minutes."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # Only after the manifests are committed, so a Release exists only for a tag that actually shipped.
+  release:
+    needs: update-manifests
+    # Runs when the optional deploy above succeeded or was skipped (forks), never when it failed, and only for a real tag.
+    if: ${{ !failure() && !cancelled() && startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Safe to re-run: a re-run of this workflow must not fail on an existing release.
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME already exists"; exit 0
+          fi
+          flags=(--generate-notes --verify-tag --title "$GITHUB_REF_NAME")
+          # v1.2.3-rc1 (any pre-release suffix) is a pre-release.
+          [[ "$GITHUB_REF_NAME" == *-* ]] && flags+=(--prerelease)
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" "${flags[@]}"
