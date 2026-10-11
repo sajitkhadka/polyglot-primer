@@ -1,0 +1,10 @@
+{
+  "name": "polyglot-primer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Side-by-side refresher for Go, Java, JavaScript and Python, with a local study tracker.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": { "node": ">=18" }
+}

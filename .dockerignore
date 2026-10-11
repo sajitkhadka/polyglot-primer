@@ -1,0 +1,9 @@
+progress.json
+notes.json
+node_modules
+.git
+.github
+Dockerfile
+*.md
+!chapters/*.md
+.env
