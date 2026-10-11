@@ -192,7 +192,7 @@ async function refreshAfterAuth() {
   await loadState();
   index = null;
   renderAuth();
-  await open(CUR, null, window.scrollY);
+  await openChapter(CUR, null, window.scrollY);
 }
 
 // ---------- sidebar / drawer ----------
@@ -321,7 +321,7 @@ function scrollToTarget(target) {
   if (node) { node.scrollIntoView({ block: "center" }); flash(node); } else window.scrollTo(0, 0);
 }
 
-async function open(file, target, keepScroll) {
+async function openChapter(file, target, keepScroll) {
   CUR = file;
   const md = await (await fetch(`/api/chapter/${file}`)).text();
   const el = $("content");
@@ -341,7 +341,7 @@ async function open(file, target, keepScroll) {
 function go(file, target) {
   if (location.hash.slice(1) !== file) history.pushState(null, "", `#${file}`);
   setMenu(false);
-  return open(file, target);
+  return openChapter(file, target);
 }
 
 // ---------- search ----------
@@ -433,17 +433,17 @@ async function init() {
   chapters = list;
   if (!chapters.length) { $("content").textContent = "No chapters found."; return; }
   const hash = location.hash.slice(1);
-  if (chapters.some((c) => c.file === hash)) return open(hash);
+  if (chapters.some((c) => c.file === hash)) return openChapter(hash);
   // Default: first chapter with an unchecked topic, scrolled to that topic.
   const c = firstUnfinished() || chapters[chapters.length - 1];
   const t = c.topics.find((x) => !done[x.id]);
   history.replaceState(null, "", `#${c.file}`);
-  open(c.file, t && { topicId: t.id });
+  openChapter(c.file, t && { topicId: t.id });
 }
 
 window.addEventListener("hashchange", () => {
   const f = location.hash.slice(1);
-  if (f && f !== CUR && chapters.some((c) => c.file === f)) { setMenu(false); open(f); }
+  if (f && f !== CUR && chapters.some((c) => c.file === f)) { setMenu(false); openChapter(f); }
 });
 
 // Phone and PC share one server: pick up changes made elsewhere when this tab comes back.
@@ -453,7 +453,7 @@ document.addEventListener("visibilitychange", async () => {
   try {
     await loadState();
     index = null;
-    open(CUR, null, window.scrollY); // re-render checkboxes and notes from fresh state
+    openChapter(CUR, null, window.scrollY); // re-render checkboxes and notes from fresh state
   } catch { /* offline: keep what we have */ }
 });
 

@@ -27,8 +27,22 @@ const ALLOWED_EMAILS = new Set((process.env.ALLOWED_EMAILS || "").split(",").map
 const AUTH_REQUIRED = !!(AUTH_PASSWORD || GOOGLE_CLIENT_ID);
 const verifyGoogle = GOOGLE_CLIENT_ID ? createVerifier({ clientId: GOOGLE_CLIENT_ID }) : null;
 if (GOOGLE_CLIENT_ID && !ALLOWED_EMAILS.size) console.error("GOOGLE_CLIENT_ID is set but ALLOWED_EMAILS is empty: nobody can sign in with Google");
-// Session key: SESSION_SECRET if given, else the password, so rotating either signs everyone out.
-const KEY = crypto.createHash("sha256").update("polyglot-primer|" + (process.env.SESSION_SECRET || AUTH_PASSWORD || GOOGLE_CLIENT_ID)).digest();
+// Session signing key. SESSION_SECRET if given; otherwise a random key generated on first start and
+// kept in DATA_DIR/session.key (mode 600), so sessions survive restarts and the key never lives in git.
+// It must never be derived from public values such as the Google client id: anyone could forge a cookie.
+function loadKey() {
+  if (process.env.SESSION_SECRET) return crypto.createHash("sha256").update(process.env.SESSION_SECRET).digest();
+  const file = path.join(DATA_DIR, "session.key");
+  try {
+    const k = Buffer.from(fs.readFileSync(file, "utf8").trim(), "hex");
+    if (k.length === 32) return k;
+  } catch { /* first start */ }
+  const k = crypto.randomBytes(32);
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(file, k.toString("hex"), { mode: 0o600 });
+  return k;
+}
+const KEY = AUTH_REQUIRED ? loadKey() : null;
 const SESSION_MS = 30 * 24 * 3600 * 1000;
 const sha = (s) => crypto.createHash("sha256").update(s).digest();
 const mac = (exp) => crypto.createHmac("sha256", KEY).update(String(exp)).digest("base64url");
