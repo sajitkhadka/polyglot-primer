@@ -8,3 +8,6 @@ Dockerfile
 !chapters/*.md
 .env
 session.key
+public/
+docs/*.md
+!docs/privacy.md

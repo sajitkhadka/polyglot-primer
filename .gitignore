@@ -3,3 +3,5 @@ notes.json
 node_modules/
 .env
 session.key
+public/
+node_modules/

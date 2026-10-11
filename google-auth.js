@@ -45,7 +45,8 @@ function createVerifier({ clientId, fetchJwks = defaultFetchJwks, now = Date.now
     if (c.aud !== clientId) throw new Error("bad audience");
     if (!c.exp || c.exp * 1000 < now()) throw new Error("token expired");
     if (!c.email || c.email_verified !== true) throw new Error("email not verified");
-    return { email: String(c.email).toLowerCase(), name: c.name || c.email };
+    if (!c.sub) throw new Error("missing subject");
+    return { sub: String(c.sub), email: String(c.email).toLowerCase(), name: c.name || c.email };
   };
 }
 

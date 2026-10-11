@@ -1,0 +1,20 @@
+name: Correction
+description: Something in a chapter is wrong, outdated or misleading
+labels: [correction]
+body:
+  - type: input
+    id: where
+    attributes:
+      label: Chapter and topic
+      placeholder: "Chapter 4, Switch / match"
+    validations: { required: true }
+  - type: textarea
+    id: what
+    attributes:
+      label: What is wrong, and what is right
+      description: A link to the language documentation or a snippet that shows it is the most helpful.
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: Language version you checked against

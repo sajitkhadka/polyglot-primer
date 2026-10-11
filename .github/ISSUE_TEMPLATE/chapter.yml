@@ -1,0 +1,22 @@
+name: Chapter proposal
+description: Propose or claim a new chapter
+labels: [chapter]
+body:
+  - type: input
+    id: title
+    attributes:
+      label: Chapter topic
+      placeholder: "Error handling"
+    validations: { required: true }
+  - type: textarea
+    id: outline
+    attributes:
+      label: Outline
+      description: The topics you would cover, and anything one of the four languages lacks or does very differently.
+    validations: { required: true }
+  - type: checkboxes
+    id: write
+    attributes:
+      label: Who will write it?
+      options:
+        - label: I would like to write it

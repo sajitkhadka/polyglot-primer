@@ -1,11 +1,15 @@
-name: Deploy
+name: Deploy (optional, self-hosted GitOps)
 
-# Builds the image and records the new tag in the k8s-config repo. It does not talk to the
-# cluster: Argo CD owns what is running, and this workflow's job is to change the desired
-# state in git (same shape as sync-todo and ect-relay).
+# Optional release pipeline for the maintainer's own cluster. It is skipped unless the repository
+# variable REGISTRY is set, so forks and clones do nothing here. Everything environment-specific comes
+# from repository variables and secrets, not from this file:
 #
-# Pushing a tag stages a release; it does not ship it. Argo CD is on manual sync, so the app
-# shows OutOfSync until someone syncs `polyglot-primer` at https://argo.int.sajitkhadka.com.
+#   vars:    REGISTRY (e.g. registry.example:5000), K8S_CONFIG_REPO (owner/name), MANIFEST (path inside
+#            that repo), SITE_URL, REPO_URL (optional)
+#   secrets: REGISTRY_USER, REGISTRY_PASSWORD, K8S_CONFIG_DEPLOY_KEY (a write deploy key for K8S_CONFIG_REPO)
+#
+# It builds the image and commits the new tag into the config repo. It never talks to the cluster: a GitOps
+# controller (Argo CD) owns what is running. Pushing a tag stages a release; syncing ships it.
 
 on:
   push:
@@ -18,18 +22,18 @@ on:
         required: false
 
 env:
-  REGISTRY: 192.168.0.120:5000
+  REGISTRY: ${{ vars.REGISTRY }}
   IMAGE: polyglot-primer
-  MANIFEST: polyglot-primer/polyglot-primer-deployment.yaml
+  MANIFEST: ${{ vars.MANIFEST }}
 
-# Two runs close together would otherwise race on the push to k8s-config.
+# Two runs close together would otherwise race on the push to the config repo.
 concurrency:
   group: deploy-manifests
   cancel-in-progress: false
 
 jobs:
   build-and-push:
-    # Self-hosted: the registry is plain HTTP on a private LAN address.
+    if: ${{ vars.REGISTRY != '' }}
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v7
@@ -44,6 +48,8 @@ jobs:
         run: |
           set -euo pipefail
           docker build \
+            --build-arg SITE_URL="${{ vars.SITE_URL }}" \
+            --build-arg REPO_URL="${{ vars.REPO_URL }}" \
             -t "$REGISTRY/$IMAGE:${{ github.sha }}" \
             -t "$REGISTRY/$IMAGE:latest" \
             .
@@ -54,10 +60,10 @@ jobs:
     needs: build-and-push
     runs-on: self-hosted
     steps:
-      # Write access to k8s-config comes from a deploy key scoped to that one repo, not a PAT.
+      # Write access to the config repo comes from a deploy key scoped to that one repo, not a PAT.
       - uses: actions/checkout@v7
         with:
-          repository: sajitkhadka/k8s-config
+          repository: ${{ vars.K8S_CONFIG_REPO }}
           ssh-key: ${{ secrets.K8S_CONFIG_DEPLOY_KEY }}
           path: k8s-config
           ref: main
@@ -84,7 +90,7 @@ jobs:
           git config user.email "polyglot-primer-ci@users.noreply.github.com"
           git commit -am "deploy(polyglot-primer): ${{ github.ref_name }}
 
-          Image built from polyglot-primer@${{ github.sha }} by ${{ github.workflow }}
+          Image built from ${{ github.repository }}@${{ github.sha }} by ${{ github.workflow }}
           run ${{ github.run_id }}."
           for attempt in 1 2 3; do
             if git push origin main; then exit 0; fi
@@ -99,7 +105,6 @@ jobs:
           {
             echo "### Staged"
             echo ""
-            echo "Image tag \`${{ github.sha }}\` committed to k8s-config."
-            echo "Argo CD is on manual sync, so this is **not live yet**: sync \`polyglot-primer\` at"
-            echo "<https://argo.int.sajitkhadka.com>. Site: <https://primer.int.sajitkhadka.com> (LAN/WireGuard only)."
+            echo "Image tag \`${{ github.sha }}\` committed to \`${{ vars.K8S_CONFIG_REPO }}\`."
+            echo "The GitOps controller is on manual sync, so this is **not live yet**: sync the application."
           } >> "$GITHUB_STEP_SUMMARY"

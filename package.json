@@ -1,10 +1,37 @@
 {
   "name": "polyglot-primer",
-  "version": "1.0.0",
+  "version": "1.2.0",
+  "description": "Go, Java, JavaScript and Python side by side: a quick refresher with syntax tables, quirks, idioms, checklists and exercises, plus a small study site.",
+  "license": "MIT AND CC-BY-SA-4.0",
   "private": true,
-  "description": "Side-by-side refresher for Go, Java, JavaScript and Python, with a local study tracker.",
-  "scripts": {
-    "start": "node server.js"
+  "keywords": [
+    "go",
+    "java",
+    "javascript",
+    "python",
+    "learning",
+    "cheatsheet",
+    "comparison",
+    "programming-languages"
+  ],
+  "engines": {
+    "node": ">=20"
   },
-  "engines": { "node": ">=18" }
+  "scripts": {
+    "build": "node scripts/build.js",
+    "start": "node scripts/build.js && node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
+  },
+  "homepage": "https://github.com/sajitkhadka/polyglot-primer#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sajitkhadka/polyglot-primer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sajitkhadka/polyglot-primer/issues"
+  },
+  "author": "Sajit Khadka"
 }

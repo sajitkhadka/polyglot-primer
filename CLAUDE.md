@@ -1,33 +1,47 @@
 # CLAUDE.md
 
-Study material comparing Go, Java, JavaScript and Python, plus a web UI (search, notes, progress). Repo: sajitkhadka/polyglot-primer (private).
+Study material comparing Go, Java, JavaScript and Python, plus a small web app (pre-rendered pages, search,
+notes, progress, optional Google sign-in with Postgres). Public-facing documents: README.md, CONTRIBUTING.md,
+docs/deployment.md. This file is the short version for agents.
 
-## Run
+## Commands
 
-`node server.js` (port 4321; `PORT`, `HOST`, `DATA_DIR`, `AUTH_PASSWORD` override). Zero dependencies - do not add any; the
-UI's Markdown renderer is hand-written in `web/app.js`; search is `web/search.js` (loadable from Node with
-`require`, so it can be exercised without a browser). There are no tests.
+- `npm install`, `npm test` (node:test, no framework), `npm run build` (writes `public/`), `npm start`
+  (build + serve on :4321). Node 20+.
+- One runtime dependency, `pg`, loaded only when `DATABASE_URL` is set. Do not add dependencies; the Markdown
+  renderer (`web/markdown.js`), search (`web/search.js`) and Google token check (`google-auth.js`) are
+  hand-written on purpose.
+- Chapter linter: `test/chapters.test.js` enforces the chapter shape. Run the tests after editing a chapter.
+
+## How it fits together
+
+- `scripts/build.js` pre-renders `chapters/*.md` into `public/` (a page per chapter, landing, privacy,
+  sitemap, robots, `chapters.json`, `md/` copies for search). `SITE_URL` sets canonical URLs.
+- `server.js` serves `public/` and the JSON API. Local run: no login, JSON files via `FileStore`. With
+  `GOOGLE_CLIENT_ID` (+ `DATABASE_URL`) it is multi-user: Google ID token -> session cookie -> `PgStore`.
+- `web/app.js` only enhances the static pages (checkboxes, notes, search, sign-in). `web/markdown.js` is shared
+  by the build and the browser: change it in one place.
 
 ## Writing chapters
 
-- File name `NN-short-name.md`; the server lists files matching `^\d+-.*\.md$` in order.
-- `# Title` once at the top. Every `##` heading becomes a trackable topic, so only use `##` for real
-  topics (including "Checklist" and "Exercises"). Use `###` for sub-sections.
-- Progress ids are `<file>#<slug of heading>`. **Renaming a chapter file or a `##` heading orphans the
-  saved progress for that topic.** `slugify()` must stay identical in `server.js` and `web/app.js`.
-- Required shape: comparison table, code in all four languages (fences tagged `go`, `java`, `js`,
-  `python`), Quirks and gotchas, What is idiomatic, Checklist, Exercises.
-- Scope: core language and stdlib only. No frameworks or third-party libraries.
-- Renderer supports: headings, tables (escape `|` inside cells as `\|`), fenced code, blockquotes, nested
-  lists, task-list items, bold, italic, inline code, links. Nothing else (no images, no HTML).
-- Versions: Go 1.22+, Java 21, ES2023/Node 22, Python 3.12. Mark newer-version features as such.
+- File `NN-short-name.md`, matching `^\d+-.*\.md$`. `# Chapter N: Title`, then a `>` summary paragraph (it becomes
+  the meta description, keep it under ~160 chars).
+- Every `##` heading is a trackable topic. Progress and note ids are `<file>#<slug of heading>`.
+  **Renaming a chapter file or a `##` heading orphans every user's saved progress and notes for it.**
+- Required: comparison table, code for all four languages (fences `go`, `java`, `js`, `python`), Quirks and
+  gotchas, What is idiomatic, Checklist (`- [ ]`), Exercises. Core language and stdlib only.
+- Versions: Go 1.22+, Java 21, ES2023/Node 22, Python 3.12. Say so for anything newer or preview.
+- Renderer supports headings, tables (write `|` in a cell as `\|`), fences, blockquotes, nested lists, task items,
+  bold, italic, inline code, links. A new construct must also be handled by `parseBlocks` in `web/search.js`.
 
 ## Constraints
 
-- `progress.json` and `notes.json` are the user's personal state and are gitignored. Never edit or delete
-  them unasked. Note ids are `<file>#<slug>`, like progress ids, with the same rename caveat.
-- Search blocks come from the same Markdown: a new Markdown construct added to the renderer must also be
-  understood by `parseBlocks` in `web/search.js`.
-- Deployment: tag `vX.Y.Z` -> `.github/workflows/deploy.yml` -> image tag committed to `k8s-config`
-  (`polyglot-primer/`) -> manual Argo CD sync. Public via the Cloudflare tunnel (no Ingress), with the app's own password gate
-  (`AUTH_PASSWORD`); `.env` holds the deployed password locally and is gitignored.
+- `progress.json`, `notes.json`, `session.key`, `.env` and `public/` are gitignored. They hold personal state or
+  generated output: never commit, edit or delete them unasked.
+- Never derive the session key from public values (client id, hostname). It is random or `SESSION_SECRET`.
+- Login mode must stay fail-closed: `GOOGLE_CLIENT_ID` without `DATABASE_URL` refuses to start. After any
+  deployment change check `/api/session` shows `"required":true`.
+- API writes require `Content-Type: application/json` (CSRF defence). Keep that when adding endpoints, and add
+  a test in `test/server.test.js`.
+- `.github/workflows/deploy.yml` is optional and driven entirely by repository variables/secrets; it must stay
+  free of hostnames, IPs and registry addresses.
