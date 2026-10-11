@@ -23,10 +23,22 @@ const firstUnfinished = () => chapters.find((c) => chapterDone(c) < c.topics.len
 const send = (url, method, body) =>
   fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body && JSON.stringify(body), keepalive: true });
 
+// Optional analytics: the server only sends this when the operator configured it (and allowed it in the CSP).
+// Do-Not-Track is honored, and the counter sets no cookies.
+function addTracker({ src, websiteId }) {
+  const el = document.createElement("script");
+  el.defer = true;
+  el.src = src;
+  el.dataset.websiteId = websiteId;
+  el.dataset.doNotTrack = "true";
+  document.head.appendChild(el);
+}
+
 async function loadState() {
   const s = await fetch("/api/session").then((r) => r.json());
   required = s.required;
   googleClientId = s.googleClientId || "";
+  if (s.analytics) addTracker(s.analytics);
   user = s.user || null;
   canSave = !s.required || s.authed;
   done = {}; notes = {};

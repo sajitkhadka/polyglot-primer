@@ -219,3 +219,32 @@ test("the session cookie is Secure behind an HTTPS proxy", async () => {
 test("login mode refuses to start without a database", () => {
   assert.throws(() => configFromEnv({ GOOGLE_CLIENT_ID: "x" }), /DATABASE_URL/);
 });
+
+test("analytics: off by default; when configured only that script and origin join the CSP and /api/session", async () => {
+  const dataDir = tmp();
+  const off = await listen(createApp({ publicDir, dataDir, store: new FileStore(dataDir) }));
+  try {
+    const csp = (await json(off.base, "/")).headers.get("content-security-policy");
+    assert.doesNotMatch(csp, /stats\.example/);
+    assert.equal("analytics" in (await (await json(off.base, "/api/session")).json()), false);
+  } finally { await off.close(); }
+
+  const on = await listen(createApp({
+    publicDir, dataDir, store: new FileStore(dataDir),
+    analyticsScriptUrl: "https://stats.example.com/s.js", analyticsWebsiteId: "04936ad9-ccf3-4243-883e-d9cfe93d5eca",
+  }));
+  try {
+    const csp = (await json(on.base, "/")).headers.get("content-security-policy");
+    assert.match(csp, /script-src 'self' https:\/\/accounts\.google\.com\/gsi\/client https:\/\/stats\.example\.com\/s\.js;/);
+    assert.match(csp, /connect-src 'self' https:\/\/accounts\.google\.com\/gsi\/ https:\/\/stats\.example\.com;/);
+    assert.deepEqual((await (await json(on.base, "/api/session")).json()).analytics,
+      { src: "https://stats.example.com/s.js", websiteId: "04936ad9-ccf3-4243-883e-d9cfe93d5eca" });
+  } finally { await on.close(); }
+});
+
+test("analytics: half-configured or non-https settings refuse to start", () => {
+  const base = { publicDir, dataDir: tmp(), store: null };
+  assert.throws(() => createApp({ ...base, analyticsScriptUrl: "https://stats.example.com/s.js" }), /ANALYTICS_/);
+  assert.throws(() => createApp({ ...base, analyticsWebsiteId: "04936ad9-ccf3-4243-883e-d9cfe93d5eca" }), /ANALYTICS_/);
+  assert.throws(() => createApp({ ...base, analyticsScriptUrl: "http://stats.example.com/s.js", analyticsWebsiteId: "04936ad9-ccf3" }), /https/);
+});

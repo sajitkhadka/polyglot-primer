@@ -44,9 +44,21 @@ function loadKey(dataDir, secret) {
   return k;
 }
 
-// config: { publicDir, dataDir, googleClientId, allowedEmails:Set, sessionSecret, store, verifyGoogle }
+// config: { publicDir, dataDir, googleClientId, allowedEmails:Set, sessionSecret, store, verifyGoogle,
+//           analyticsScriptUrl, analyticsWebsiteId }
+// Optional analytics (a cookieless Umami-style counter): both values or neither. The script URL and its origin are
+// the only additions to the Content-Security-Policy, and the browser injects the tag (web/app.js).
+function parseAnalytics(scriptUrl, websiteId) {
+  if (!scriptUrl && !websiteId) return null;
+  let u;
+  try { u = new URL(scriptUrl); } catch { throw new Error("ANALYTICS_SCRIPT_URL must be an absolute https URL"); }
+  if (u.protocol !== "https:" || !/^[0-9a-f-]{8,64}$/i.test(websiteId || "")) throw new Error("ANALYTICS_SCRIPT_URL must be https and ANALYTICS_WEBSITE_ID must be an id (both are required together)");
+  return { src: u.href, origin: u.origin, websiteId };
+}
+
 function createApp(config) {
   const { publicDir, store } = config;
+  const analytics = parseAnalytics(config.analyticsScriptUrl, config.analyticsWebsiteId);
   const authRequired = !!config.googleClientId;
   const allowed = config.allowedEmails || new Set();
   const verifyGoogle = authRequired ? config.verifyGoogle || createVerifier({ clientId: config.googleClientId }) : null;
@@ -100,8 +112,9 @@ function createApp(config) {
       "X-Frame-Options": "DENY",
       "Referrer-Policy": "strict-origin-when-cross-origin",
       // accounts.google.com is for the Google sign-in button (script, iframe, styles, token callback).
+      // The analytics entries exist only when ANALYTICS_* is configured: the one script, and its origin for the beacon.
       "Content-Security-Policy":
-        "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; frame-src https://accounts.google.com/gsi/; connect-src 'self' https://accounts.google.com/gsi/; img-src 'self' data: https://*.googleusercontent.com; frame-ancestors 'none'",
+        `default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client${analytics ? " " + analytics.src : ""}; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; frame-src https://accounts.google.com/gsi/; connect-src 'self' https://accounts.google.com/gsi/${analytics ? " " + analytics.origin : ""}; img-src 'self' data: https://*.googleusercontent.com; frame-ancestors 'none'`,
       ...extra,
     });
     res.end(typeof body === "string" || Buffer.isBuffer(body) ? body : JSON.stringify(body));
@@ -130,7 +143,7 @@ function createApp(config) {
       let user = null;
       if (authRequired && u) user = await store.getUser(u);
       const signedIn = !authRequired || !!user;
-      return api(res, 200, { required: authRequired, authed: signedIn, googleClientId: config.googleClientId || "", user: user && { email: user.email, name: user.name } });
+      return api(res, 200, { required: authRequired, authed: signedIn, googleClientId: config.googleClientId || "", ...(analytics && { analytics: { src: analytics.src, websiteId: analytics.websiteId } }), user: user && { email: user.email, name: user.name } });
     }
 
     if (p === "/api/login" && req.method === "POST") {
@@ -232,6 +245,8 @@ function configFromEnv(env = process.env, root = __dirname) {
     googleClientId,
     allowedEmails: new Set((env.ALLOWED_EMAILS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)),
     sessionSecret: env.SESSION_SECRET || "",
+    analyticsScriptUrl: env.ANALYTICS_SCRIPT_URL || "",
+    analyticsWebsiteId: env.ANALYTICS_WEBSITE_ID || "",
     store: createStore({ databaseUrl: env.DATABASE_URL, dataDir }),
   };
 }

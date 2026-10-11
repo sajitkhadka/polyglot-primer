@@ -17,6 +17,7 @@ All configuration is environment variables.
 | `PORT` / `HOST` | `4321` / `127.0.0.1` (container: `8080` / `0.0.0.0`) | Where the server listens |
 | `DATA_DIR` | project folder (container: `/data`) | Where `session.key` (and, without a database, the JSON files) are written |
 | `GOOGLE_CLIENT_ID` | unset | Turns on Google sign-in and the login gate. **Requires `DATABASE_URL`** |
+| `ANALYTICS_SCRIPT_URL`, `ANALYTICS_WEBSITE_ID` | unset | Optional cookieless visitor counter (Umami). Set both or neither; the URL must be https. Adds only that script and its origin to the Content-Security-Policy |
 | `DATABASE_URL` | unset | Postgres connection string. Tables are created on start |
 | `ALLOWED_EMAILS` | unset | Optional comma-separated allowlist. Empty means any Google account may sign in |
 | `SESSION_SECRET` | random, kept in `DATA_DIR/session.key` | Signing key for session cookies. Set it if you run several instances or have no persistent volume; changing it signs everyone out |

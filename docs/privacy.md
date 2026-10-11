@@ -5,7 +5,9 @@ This is a small hobby project. This page says exactly what the site keeps, in pl
 ## Reading the site
 
 You do not need an account to read any chapter. The server does not set cookies for readers, and the site has
-no analytics, advertising or tracking scripts. Like any web server, it may keep ordinary access logs (IP address,
+no advertising or tracking scripts. The person running a copy of the site can optionally switch on a privacy-friendly
+visitor counter (a self-hosted Umami); where that is on, it records the page, the referrer, your browser and
+approximate country, sets no cookies, ignores visitors who send Do-Not-Track, and is not shared with anyone. Like any web server, it may keep ordinary access logs (IP address,
 page, time) for a short period for debugging and abuse prevention.
 
 ## If you sign in
