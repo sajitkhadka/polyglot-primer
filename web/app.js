@@ -7,6 +7,8 @@ let notes = {};
 let CUR = "";
 let index = null; // search blocks, built lazily on first search
 let required = false; // server has a login gate
+let googleClientId = ""; // set when the server accepts Google sign-in
+let passwordLogin = false;
 let canSave = true; // progress and notes are available (no gate, or signed in)
 
 // Must match slugify() in server.js.
@@ -118,6 +120,8 @@ const firstUnfinished = () => chapters.find((c) => chapterDone(c) < c.topics.len
 async function loadState() {
   const s = await fetch("/api/session").then((r) => r.json());
   required = s.required;
+  googleClientId = s.googleClientId || "";
+  passwordLogin = !!s.password;
   canSave = !s.required || s.authed;
   if (!canSave) { done = {}; notes = {}; return; }
   const [p, n] = await Promise.all([
@@ -139,18 +143,49 @@ function renderAuth() {
     });
     return;
   }
-  box.innerHTML = `<form id="login" class="login">
+  box.innerHTML = `<div class="login">
     <div class="hint">Chapters are open to read. Sign in to save progress and notes.</div>
-    <input type="password" id="pw" placeholder="Password" autocomplete="current-password" aria-label="Password">
-    <button type="submit">Sign in</button>
+    ${googleClientId ? '<div id="g-btn"></div>' : ""}
+    ${passwordLogin ? `<form id="login">
+      <input type="password" id="pw" placeholder="Password" autocomplete="current-password" aria-label="Password">
+      <button type="submit">Sign in</button>
+    </form>` : ""}
     <div class="err" id="login-err" role="alert"></div>
-  </form>`;
-  $("login").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const r = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: $("pw").value }) });
-    if (r.ok) return refreshAfterAuth();
-    $("login-err").textContent = r.status === 429 ? "Too many attempts. Try again later." : "Wrong password.";
-  });
+  </div>`;
+  const fail = (r) => { $("login-err").textContent = r.status === 429 ? "Too many attempts. Try again later." : r.status === 403 ? "That Google account is not allowed." : "Sign-in failed."; };
+  const post = (body) => fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (passwordLogin) {
+    $("login").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const r = await post({ password: $("pw").value });
+      if (r.ok) return refreshAfterAuth();
+      fail(r);
+    });
+  }
+  if (googleClientId) loadGoogle().then(() => {
+    google.accounts.id.initialize({
+      client_id: googleClientId,
+      callback: async (resp) => {
+        const r = await post({ credential: resp.credential });
+        if (r.ok) return refreshAfterAuth();
+        fail(r);
+      },
+    });
+    google.accounts.id.renderButton($("g-btn"), { theme: "outline", size: "large", text: "signin_with", width: 240 });
+  }).catch(() => { $("login-err").textContent = "Could not load Google sign-in."; });
+}
+
+let gsiLoading;
+function loadGoogle() {
+  if (window.google && google.accounts) return Promise.resolve();
+  return (gsiLoading ||= new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://accounts.google.com/gsi/client";
+    s.async = true;
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  }));
 }
 
 async function refreshAfterAuth() {

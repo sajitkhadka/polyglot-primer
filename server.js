@@ -3,6 +3,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { createVerifier } = require("./google-auth");
 
 const PORT = Number(process.env.PORT) || 4321;
 const HOST = process.env.HOST || "127.0.0.1";
@@ -18,8 +19,16 @@ const MAX_NOTE = 20000;
 // Optional login gate. With AUTH_PASSWORD unset (local use) everything is open. With it set,
 // chapters stay readable by anyone but progress and notes need a session cookie. Changing the
 // password invalidates every session, because the signing key is derived from it.
+// Google sign-in (same pattern as tickoff/sync-todo): GOOGLE_CLIENT_ID enables it, and only the
+// addresses in ALLOWED_EMAILS get a session - without that list any Google account would be let in.
 const AUTH_PASSWORD = process.env.AUTH_PASSWORD || "";
-const KEY = crypto.createHash("sha256").update("polyglot-primer|" + AUTH_PASSWORD).digest();
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
+const ALLOWED_EMAILS = new Set((process.env.ALLOWED_EMAILS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
+const AUTH_REQUIRED = !!(AUTH_PASSWORD || GOOGLE_CLIENT_ID);
+const verifyGoogle = GOOGLE_CLIENT_ID ? createVerifier({ clientId: GOOGLE_CLIENT_ID }) : null;
+if (GOOGLE_CLIENT_ID && !ALLOWED_EMAILS.size) console.error("GOOGLE_CLIENT_ID is set but ALLOWED_EMAILS is empty: nobody can sign in with Google");
+// Session key: SESSION_SECRET if given, else the password, so rotating either signs everyone out.
+const KEY = crypto.createHash("sha256").update("polyglot-primer|" + (process.env.SESSION_SECRET || AUTH_PASSWORD || GOOGLE_CLIENT_ID)).digest();
 const SESSION_MS = 30 * 24 * 3600 * 1000;
 const sha = (s) => crypto.createHash("sha256").update(s).digest();
 const mac = (exp) => crypto.createHmac("sha256", KEY).update(String(exp)).digest("base64url");
@@ -34,7 +43,7 @@ function sessionCookie(req) {
   const c = (req.headers.cookie || "").split(/;\s*/).find((x) => x.startsWith("pp_session="));
   return c ? c.slice("pp_session=".length) : "";
 }
-const authed = (req) => !AUTH_PASSWORD || validToken(sessionCookie(req));
+const authed = (req) => !AUTH_REQUIRED || validToken(sessionCookie(req));
 const secure = (req) => String(req.headers["x-forwarded-proto"] || "").includes("https");
 const clientIp = (req) => req.headers["cf-connecting-ip"] || String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress;
 
@@ -103,7 +112,8 @@ function send(res, code, body, type = "application/json", extra = {}) {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "same-origin",
-    "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
+    // accounts.google.com is for the Google sign-in button (script, iframe, styles, token callback).
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; frame-src https://accounts.google.com/gsi/; connect-src 'self' https://accounts.google.com/gsi/; img-src 'self' data: https://*.googleusercontent.com; frame-ancestors 'none'",
     ...extra,
   });
   res.end(typeof body === "string" || Buffer.isBuffer(body) ? body : JSON.stringify(body));
@@ -134,20 +144,27 @@ const server = http.createServer((req, res) => {
   if (p === "/healthz") return send(res, 200, { ok: true });
   if (p === "/api/chapters") return send(res, 200, listChapters());
 
-  if (p === "/api/session") return send(res, 200, { required: !!AUTH_PASSWORD, authed: authed(req) });
+  if (p === "/api/session") return send(res, 200, { required: AUTH_REQUIRED, authed: authed(req), googleClientId: GOOGLE_CLIENT_ID, password: !!AUTH_PASSWORD });
 
   if (p === "/api/login" && req.method === "POST") {
-    if (!AUTH_PASSWORD) return send(res, 200, { ok: true });
+    if (!AUTH_REQUIRED) return send(res, 200, { ok: true });
     const ip = clientIp(req);
     if (throttled(ip)) return send(res, 429, { error: "too many attempts, try again later" });
-    return readBody(req, res, (b) => {
-      const ok = typeof b.password === "string" && crypto.timingSafeEqual(sha(b.password), sha(AUTH_PASSWORD));
-      if (!ok) {
-        fails.push({ ip, t: Date.now() });
-        return send(res, 401, { error: "wrong password" });
-      }
+    const grant = () => {
       const cookie = `pp_session=${makeToken()}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_MS / 1000}${secure(req) ? "; Secure" : ""}`;
       send(res, 200, { ok: true }, "application/json", { "Set-Cookie": cookie });
+    };
+    const deny = (code, error) => { fails.push({ ip, t: Date.now() }); send(res, code, { error }); };
+    return readBody(req, res, async (b) => {
+      if (typeof b.credential === "string") {
+        if (!verifyGoogle) return deny(400, "google sign-in is not enabled");
+        let who;
+        try { who = await verifyGoogle(b.credential); } catch { return deny(401, "invalid google token"); }
+        if (!ALLOWED_EMAILS.has(who.email)) return deny(403, "this account is not allowed");
+        return grant();
+      }
+      const ok = AUTH_PASSWORD && typeof b.password === "string" && crypto.timingSafeEqual(sha(b.password), sha(AUTH_PASSWORD));
+      return ok ? grant() : deny(401, "wrong password");
     });
   }
 
@@ -210,5 +227,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Polyglot Primer running at http://${HOST}:${PORT} (data: ${DATA_DIR}, login ${AUTH_PASSWORD ? "required" : "off"})`);
+  console.log(`Polyglot Primer running at http://${HOST}:${PORT} (data: ${DATA_DIR}, login ${AUTH_REQUIRED ? "required" : "off"})`);
 });
