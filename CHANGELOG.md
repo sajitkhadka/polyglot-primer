@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1
+
+- Optional cookieless Umami visitor counter (1.3.0), enabled with `ANALYTICS_SCRIPT_URL` and `ANALYTICS_WEBSITE_ID`. It does not honor Do-Not-Track.
+
 ## 1.2.0
 
 - Every chapter is a pre-rendered HTML page with SEO metadata, `sitemap.xml` and `robots.txt`.

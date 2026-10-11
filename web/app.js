@@ -24,13 +24,12 @@ const send = (url, method, body) =>
   fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body && JSON.stringify(body), keepalive: true });
 
 // Optional analytics: the server only sends this when the operator configured it (and allowed it in the CSP).
-// Do-Not-Track is honored, and the counter sets no cookies.
+// The counter sets no cookies and collects no personal data; it does not look at Do-Not-Track.
 function addTracker({ src, websiteId }) {
   const el = document.createElement("script");
   el.defer = true;
   el.src = src;
   el.dataset.websiteId = websiteId;
-  el.dataset.doNotTrack = "true";
   document.head.appendChild(el);
 }
 
